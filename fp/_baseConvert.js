@@ -154,7 +154,7 @@ function baseConvert(util, name, func, options) {
     'cap': 'cap' in options ? options.cap : true,
     'curry': 'curry' in options ? options.curry : true,
     'fixed': 'fixed' in options ? options.fixed : true,
-    'immutable': 'immutable' in options ? options.immutable : true,
+    'immutable': 'immutable' in options ? options.immutable : false,
     'rearg': 'rearg' in options ? options.rearg : true
   };
 

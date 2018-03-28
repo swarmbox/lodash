@@ -451,6 +451,112 @@
   /*--------------------------------------------------------------------------*/
 
   /**
+   * Checks if `value` is an instance of Ember.Object.
+   *
+   * @private
+   * @param {*} value The value to check.
+   * @returns {boolean} Returns `true` if `value` is an instance of Ember.Object, else `false`.
+   */
+  function isEmberObject(value) {
+    return root.Ember && value instanceof Ember.Object;
+  }
+
+  /**
+   * Gets the value at `key` of `object`.
+   *
+   * @private
+   * @param {Object} [object] The object to query.
+   * @param {string} key The key of the property to get.
+   * @returns {*} Returns the property value.
+   */
+  function getValue(object, key) {
+    if (object == null) { return undefined; }
+    if (isEmberEnumerable(object) && !isNaN(key)) { return object.objectAt(key); }
+    if (isEmberObject(object)) { return object.get(key); }
+    return object[key];
+  }
+
+  /**
+   * Checks if `value` mixes in Ember.Enumerable.
+   *
+   * @private
+   * @param {*} value The value to check.
+   * @returns {boolean} Returns `true` if `value` mixes in Ember.Enumerable, else `false`.
+   */
+  function isEmberEnumerable(value) {
+    return root.Ember && Ember.Enumerable.detect(value);
+  }
+
+  /**
+   * Checks if `value` mixes in Ember.ArrayProxy.
+   *
+   * @private
+   * @param {*} value The value to check.
+   * @returns {boolean} Returns `true` if `value` mixes in Ember.ArrayProxy, else `false`.
+   */
+  function isEmberArrayProxy(value) {
+    return root.Ember && value instanceof Ember.ArrayProxy;
+  }
+
+  function makeArrayAccessor(array) {
+    return function accessArrayAt(index) {
+      return array[index];
+    }
+  }
+
+  function makeEmberEnumerableAccessor(object) {
+    var context = {},
+        previous = null;
+
+    return function accessEnumerableAt(index) {
+      previous = object.nextObject(index, previous, context);
+      return previous;
+    }
+  }
+
+  function getArrayAccessor(object) {
+    return isEmberEnumerable(object) ? makeEmberEnumerableAccessor(object) : makeArrayAccessor(object);
+  }
+
+  function makeArrayAssigner(array) {
+    return function assignArrayAt(index, value) {
+      array[index] = value;
+      return this;
+    }
+  }
+
+  function makeEmberMutableEnumerableAssigner(enumerable) {
+    return function assignEnumerableAt(index, value) {
+      enumerable.replace(index, 1, [value]);
+      return this;
+    }
+  }
+
+  function getArrayAssigner(object) {
+    return isEmberEnumerable(object) ? makeEmberMutableEnumerableAssigner(object) : makeArrayAssigner(object);
+  }
+
+  function makeArrayRemover(array) {
+    return function removeArrayAt(index, num) {
+      array.splice(index, num == null ? 1 : num);
+      return this;
+    }
+  }
+
+  function makeEmberMutableEnumerableRemover(enumerable) {
+    return function removeEnumerableAt(index, num) {
+      enumerable.replace(index, num == null ? 1 : num, []);
+      return this;
+    }
+  }
+
+  function getArrayRemover(object) {
+    return isEmberEnumerable(object) ? makeEmberMutableEnumerableRemover(object) : makeArrayRemover(object);
+  }
+
+  /*--------------------------------------------------------------------------*/
+
+  /**
    * A faster alternative to `Function#apply`, this function invokes `func`
    * with the `this` binding of `thisArg` and the arguments of `args`.
    *
@@ -482,10 +588,11 @@
    */
   function arrayAggregator(array, setter, iteratee, accumulator) {
     var index = -1,
-        length = array == null ? 0 : array.length;
+        length = array == null ? 0 : array.length,
+        arrayAt = getArrayAccessor(array);
 
     while (++index < length) {
-      var value = array[index];
+      var value = arrayAt(index);
       setter(accumulator, value, iteratee(value), array);
     }
     return accumulator;
@@ -502,10 +609,11 @@
    */
   function arrayEach(array, iteratee) {
     var index = -1,
-        length = array == null ? 0 : array.length;
+        length = array == null ? 0 : array.length,
+        arrayAt = getArrayAccessor(array);
 
     while (++index < length) {
-      if (iteratee(array[index], index, array) === false) {
+      if (iteratee(arrayAt(index), index, array) === false) {
         break;
       }
     }
@@ -522,10 +630,11 @@
    * @returns {Array} Returns `array`.
    */
   function arrayEachRight(array, iteratee) {
-    var length = array == null ? 0 : array.length;
+    var length = array == null ? 0 : array.length,
+        arrayAt = getArrayAccessor(array);
 
     while (length--) {
-      if (iteratee(array[length], length, array) === false) {
+      if (iteratee(arrayAt(length), length, array) === false) {
         break;
       }
     }
@@ -544,10 +653,11 @@
    */
   function arrayEvery(array, predicate) {
     var index = -1,
-        length = array == null ? 0 : array.length;
+        length = array == null ? 0 : array.length,
+        arrayAt = getArrayAccessor(array);
 
     while (++index < length) {
-      if (!predicate(array[index], index, array)) {
+      if (!predicate(arrayAt(index), index, array)) {
         return false;
       }
     }
@@ -567,10 +677,11 @@
     var index = -1,
         length = array == null ? 0 : array.length,
         resIndex = 0,
-        result = [];
+        result = [],
+        arrayAt = getArrayAccessor(array);
 
     while (++index < length) {
-      var value = array[index];
+      var value = arrayAt(index);
       if (predicate(value, index, array)) {
         result[resIndex++] = value;
       }
@@ -603,10 +714,11 @@
    */
   function arrayIncludesWith(array, value, comparator) {
     var index = -1,
-        length = array == null ? 0 : array.length;
+        length = array == null ? 0 : array.length,
+        arrayAt = getArrayAccessor(array);
 
     while (++index < length) {
-      if (comparator(value, array[index])) {
+      if (comparator(value, arrayAt(index))) {
         return true;
       }
     }
@@ -625,10 +737,11 @@
   function arrayMap(array, iteratee) {
     var index = -1,
         length = array == null ? 0 : array.length,
-        result = Array(length);
+        result = Array(length),
+        arrayAt = getArrayAccessor(array);
 
     while (++index < length) {
-      result[index] = iteratee(array[index], index, array);
+      result[index] = iteratee(arrayAt(index), index, array);
     }
     return result;
   }
@@ -644,10 +757,12 @@
   function arrayPush(array, values) {
     var index = -1,
         length = values.length,
-        offset = array.length;
+        offset = array.length,
+        assignAt = getArrayAssigner(array),
+        valueAt = getArrayAccessor(values);
 
     while (++index < length) {
-      array[offset + index] = values[index];
+      assignAt(offset + index, valueAt(index));
     }
     return array;
   }
@@ -666,13 +781,14 @@
    */
   function arrayReduce(array, iteratee, accumulator, initAccum) {
     var index = -1,
-        length = array == null ? 0 : array.length;
+        length = array == null ? 0 : array.length,
+      arrayAt = getArrayAccessor(array);
 
     if (initAccum && length) {
-      accumulator = array[++index];
+      accumulator = arrayAt(++index);
     }
     while (++index < length) {
-      accumulator = iteratee(accumulator, array[index], index, array);
+      accumulator = iteratee(accumulator, arrayAt(index), index, array);
     }
     return accumulator;
   }
@@ -690,12 +806,13 @@
    * @returns {*} Returns the accumulated value.
    */
   function arrayReduceRight(array, iteratee, accumulator, initAccum) {
-    var length = array == null ? 0 : array.length;
+    var length = array == null ? 0 : array.length,
+        arrayAt = getArrayAccessor(array);
     if (initAccum && length) {
-      accumulator = array[--length];
+      accumulator = arrayAt(--length);
     }
     while (length--) {
-      accumulator = iteratee(accumulator, array[length], length, array);
+      accumulator = iteratee(accumulator, arrayAt(length), length, array);
     }
     return accumulator;
   }
@@ -712,10 +829,11 @@
    */
   function arraySome(array, predicate) {
     var index = -1,
-        length = array == null ? 0 : array.length;
+        length = array == null ? 0 : array.length,
+        arrayAt = getArrayAccessor(array);
 
     while (++index < length) {
-      if (predicate(array[index], index, array)) {
+      if (predicate(arrayAt(index), index, array)) {
         return true;
       }
     }
@@ -788,10 +906,11 @@
    */
   function baseFindIndex(array, predicate, fromIndex, fromRight) {
     var length = array.length,
-        index = fromIndex + (fromRight ? 1 : -1);
+        index = fromIndex + (fromRight ? 1 : -1),
+        arrayAt = getArrayAccessor(array);
 
     while ((fromRight ? index-- : ++index < length)) {
-      if (predicate(array[index], index, array)) {
+      if (predicate(arrayAt(index), index, array)) {
         return index;
       }
     }
@@ -825,10 +944,11 @@
    */
   function baseIndexOfWith(array, value, fromIndex, comparator) {
     var index = fromIndex - 1,
-        length = array.length;
+        length = array.length,
+        arrayAt = getArrayAccessor(array);
 
     while (++index < length) {
-      if (comparator(array[index], value)) {
+      if (comparator(arrayAt(index), value)) {
         return index;
       }
     }
@@ -869,7 +989,7 @@
    */
   function baseProperty(key) {
     return function(object) {
-      return object == null ? undefined : object[key];
+      return object == null ? undefined : getValue(object, key);
     };
   }
 
@@ -882,7 +1002,7 @@
    */
   function basePropertyOf(object) {
     return function(key) {
-      return object == null ? undefined : object[key];
+      return object == null ? undefined : getValue(object, key);
     };
   }
 
@@ -940,10 +1060,11 @@
   function baseSum(array, iteratee) {
     var result,
         index = -1,
-        length = array.length;
+        length = array.length,
+        arrayAt = getArrayAccessor(array);
 
     while (++index < length) {
-      var current = iteratee(array[index]);
+      var current = iteratee(arrayAt(index));
       if (current !== undefined) {
         result = result === undefined ? current : (result + current);
       }
@@ -981,7 +1102,7 @@
    */
   function baseToPairs(object, props) {
     return arrayMap(props, function(key) {
-      return [key, object[key]];
+      return [key, getValue(object, key)];
     });
   }
 
@@ -1010,7 +1131,7 @@
    */
   function baseValues(object, props) {
     return arrayMap(props, function(key) {
-      return object[key];
+      return getValue(object, key);
     });
   }
 
@@ -1069,10 +1190,11 @@
    */
   function countHolders(array, placeholder) {
     var length = array.length,
+        arrayAt = getArrayAccessor(array),
         result = 0;
 
     while (length--) {
-      if (array[length] === placeholder) {
+      if (arrayAt(length) === placeholder) {
         ++result;
       }
     }
@@ -1107,18 +1229,6 @@
    */
   function escapeStringChar(chr) {
     return '\\' + stringEscapes[chr];
-  }
-
-  /**
-   * Gets the value at `key` of `object`.
-   *
-   * @private
-   * @param {Object} [object] The object to query.
-   * @param {string} key The key of the property to get.
-   * @returns {*} Returns the property value.
-   */
-  function getValue(object, key) {
-    return object == null ? undefined : object[key];
   }
 
   /**
@@ -1203,13 +1313,15 @@
   function replaceHolders(array, placeholder) {
     var index = -1,
         length = array.length,
+        arrayAt = getArrayAccessor(array),
+        arrayAssign = getArrayAssigner(array),
         resIndex = 0,
         result = [];
 
     while (++index < length) {
-      var value = array[index];
+      var value = arrayAt(index);
       if (value === placeholder || value === PLACEHOLDER) {
-        array[index] = PLACEHOLDER;
+        arrayAssign(index, PLACEHOLDER);
         result[resIndex++] = index;
       }
     }
@@ -1227,7 +1339,7 @@
   function safeGet(object, key) {
     return key == '__proto__'
       ? undefined
-      : object[key];
+      : getValue(object, key);
   }
 
   /**
@@ -1239,10 +1351,10 @@
    */
   function setToArray(set) {
     var index = -1,
-        result = Array(set.size);
+        result = getArrayAssigner(Array(set.size));
 
     set.forEach(function(value) {
-      result[++index] = value;
+      result(++index, value);
     });
     return result;
   }
@@ -1276,10 +1388,11 @@
    */
   function strictIndexOf(array, value, fromIndex) {
     var index = fromIndex - 1,
-        length = array.length;
+        length = array.length,
+        arrayAt = getArrayAccessor(array);
 
     while (++index < length) {
-      if (array[index] === value) {
+      if (arrayAt(index) === value) {
         return index;
       }
     }
@@ -1297,9 +1410,10 @@
    * @returns {number} Returns the index of the matched value, else `-1`.
    */
   function strictLastIndexOf(array, value, fromIndex) {
-    var index = fromIndex + 1;
+    var index = fromIndex + 1,
+        arrayAt = getArrayAccessor(array);
     while (index--) {
-      if (array[index] === value) {
+      if (arrayAt(index) === value) {
         return index;
       }
     }
@@ -2475,7 +2589,7 @@
      * @param {*} value The value to assign.
      */
     function assignValue(object, key, value) {
-      var objValue = object[key];
+      var objValue = getValue(object, key);
       if (!(hasOwnProperty.call(object, key) && eq(objValue, value)) ||
           (value === undefined && !(key in object))) {
         baseAssignValue(object, key, value);
@@ -2554,7 +2668,9 @@
      * @param {*} value The value to assign.
      */
     function baseAssignValue(object, key, value) {
-      if (key == '__proto__' && defineProperty) {
+      if (isEmberObject(object)) {
+        object.set(key, value)
+      } else if (key == '__proto__' && defineProperty) {
         defineProperty(object, key, {
           'configurable': true,
           'enumerable': true,
@@ -2578,10 +2694,11 @@
       var index = -1,
           length = paths.length,
           result = Array(length),
-          skip = object == null;
+          skip = object == null,
+          pathAt = getArrayAccessor(paths);
 
       while (++index < length) {
-        result[index] = skip ? undefined : get(object, paths[index]);
+        result[index] = skip ? undefined : get(object, pathAt(index));
       }
       return result;
     }
@@ -2778,6 +2895,7 @@
           includes = arrayIncludes,
           isCommon = true,
           length = array.length,
+          arrayAt = getArrayAccessor(array),
           result = [],
           valuesLength = values.length;
 
@@ -2796,16 +2914,19 @@
         isCommon = false;
         values = new SetCache(values);
       }
+
+      var valuesAt = getArrayAccessor(values);
+
       outer:
       while (++index < length) {
-        var value = array[index],
+        var value = arrayAt(index),
             computed = iteratee == null ? value : iteratee(value);
 
         value = (comparator || value !== 0) ? value : 0;
         if (isCommon && computed === computed) {
           var valuesIndex = valuesLength;
           while (valuesIndex--) {
-            if (values[valuesIndex] === computed) {
+            if (valuesAt(valuesIndex) === computed) {
               continue outer;
             }
           }
@@ -2896,7 +3017,8 @@
      * @returns {Array} Returns `array`.
      */
     function baseFill(array, value, start, end) {
-      var length = array.length;
+      var length = array.length,
+          arrayAssign = getArrayAssigner(array);
 
       start = toInteger(start);
       if (start < 0) {
@@ -2908,7 +3030,7 @@
       }
       end = start > end ? 0 : toLength(end);
       while (start < end) {
-        array[start++] = value;
+        arrayAssign(start++, value);
       }
       return array;
     }
@@ -2944,13 +3066,14 @@
      */
     function baseFlatten(array, depth, predicate, isStrict, result) {
       var index = -1,
-          length = array.length;
+          length = array.length,
+          arrayAt = getArrayAccessor(array);
 
       predicate || (predicate = isFlattenable);
       result || (result = []);
 
       while (++index < length) {
-        var value = array[index];
+        var value = arrayAt(index);
         if (depth > 0 && predicate(value)) {
           if (depth > 1) {
             // Recursively flatten arrays (susceptible to call stack limits).
@@ -3044,7 +3167,14 @@
           length = path.length;
 
       while (object != null && index < length) {
-        object = object[toKey(path[index++])];
+        var key = toKey(path[index++]);
+        if (isEmberEnumerable(object) && !isNaN(key)) {
+          object = object.objectAt(key);
+        } else if (isEmberObject(object)) {
+          object = object.get(key);
+        } else {
+          object = object[key];
+        }
       }
       return (index && index == length) ? object : undefined;
     }
@@ -3163,11 +3293,12 @@
       array = arrays[0];
 
       var index = -1,
-          seen = caches[0];
+          seen = caches[0],
+          arrayAt = getArrayAccessor(array);
 
       outer:
       while (++index < length && result.length < maxLength) {
-        var value = array[index],
+        var value = arrayAt(index),
             computed = iteratee ? iteratee(value) : value;
 
         value = (comparator || value !== 0) ? value : 0;
@@ -3718,7 +3849,7 @@
         return;
       }
       n += n < 0 ? length : 0;
-      return isIndex(n, length) ? array[n] : undefined;
+      return isIndex(n, length) ? getArrayAccessor(array)(n) : undefined;
     }
 
     /**
@@ -3822,16 +3953,18 @@
       if (iteratee) {
         seen = arrayMap(array, baseUnary(iteratee));
       }
+      var valueAt = getArrayAccessor(values),
+          removeAt = getArrayRemover(array);
       while (++index < length) {
         var fromIndex = 0,
-            value = values[index],
+            value = valueAt(index),
             computed = iteratee ? iteratee(value) : value;
 
         while ((fromIndex = indexOf(seen, computed, fromIndex, comparator)) > -1) {
           if (seen !== array) {
             splice.call(seen, fromIndex, 1);
           }
-          splice.call(array, fromIndex, 1);
+          removeAt(fromIndex);
         }
       }
       return array;
@@ -3848,14 +3981,16 @@
      */
     function basePullAt(array, indexes) {
       var length = array ? indexes.length : 0,
-          lastIndex = length - 1;
+          lastIndex = length - 1,
+          removeAt = getArrayRemover(array),
+          indexAt = getArrayAccessor(indexes);
 
       while (length--) {
-        var index = indexes[length];
+        var index = indexAt(length);
         if (length == lastIndex || index !== previous) {
           var previous = index;
           if (isIndex(index)) {
-            splice.call(array, index, 1);
+            removeAt(index);
           } else {
             baseUnset(array, index);
           }
@@ -3990,7 +4125,7 @@
             newValue = value;
 
         if (index != lastIndex) {
-          var objValue = nested[key];
+          var objValue = getValue(nested, key);
           newValue = customizer ? customizer(objValue, key, nested) : undefined;
           if (newValue === undefined) {
             newValue = isObject(objValue)
@@ -3999,7 +4134,7 @@
           }
         }
         assignValue(nested, key, newValue);
-        nested = nested[key];
+        nested = getValue(nested, key);
       }
       return object;
     }
@@ -4056,7 +4191,8 @@
      */
     function baseSlice(array, start, end) {
       var index = -1,
-          length = array.length;
+          length = array.length,
+          arrayAt = getArrayAccessor(array);
 
       if (start < 0) {
         start = -start > length ? 0 : (length + start);
@@ -4070,7 +4206,7 @@
 
       var result = Array(length);
       while (++index < length) {
-        result[index] = array[index + start];
+        result[index] = arrayAt(index + start);
       }
       return result;
     }
@@ -4108,12 +4244,13 @@
      */
     function baseSortedIndex(array, value, retHighest) {
       var low = 0,
-          high = array == null ? low : array.length;
+          high = array == null ? low : array.length,
+          arrayAt = getArrayAccessor(array);
 
       if (typeof value == 'number' && value === value && high <= HALF_MAX_ARRAY_LENGTH) {
         while (low < high) {
           var mid = (low + high) >>> 1,
-              computed = array[mid];
+              computed = arrayAt(mid);
 
           if (computed !== null && !isSymbol(computed) &&
               (retHighest ? (computed <= value) : (computed < value))) {
@@ -4148,7 +4285,8 @@
           valIsNaN = value !== value,
           valIsNull = value === null,
           valIsSymbol = isSymbol(value),
-          valIsUndefined = value === undefined;
+          valIsUndefined = value === undefined,
+          arrayAt = getArrayAccessor(array);
 
       while (low < high) {
         var mid = nativeFloor((low + high) / 2),
@@ -4193,10 +4331,11 @@
       var index = -1,
           length = array.length,
           resIndex = 0,
-          result = [];
+          result = [],
+          arrayAt = getArrayAccessor(array);
 
       while (++index < length) {
-        var value = array[index],
+        var value = arrayAt(index),
             computed = iteratee ? iteratee(value) : value;
 
         if (!index || !eq(computed, seen)) {
@@ -4282,9 +4421,12 @@
       else {
         seen = iteratee ? [] : result;
       }
+
+      var valueAt = getArrayAccessor(array);
+
       outer:
       while (++index < length) {
-        var value = array[index],
+        var value = valueAt(index),
             computed = iteratee ? iteratee(value) : value;
 
         value = (comparator || value !== 0) ? value : 0;
@@ -4351,10 +4493,11 @@
      */
     function baseWhile(array, predicate, isDrop, fromRight) {
       var length = array.length,
-          index = fromRight ? length : -1;
+          index = fromRight ? length : -1,
+          arrayAt = getArrayAccessor(array);
 
       while ((fromRight ? index-- : ++index < length) &&
-        predicate(array[index], index, array)) {}
+        predicate(arrayAt(index), index, array)) {}
 
       return isDrop
         ? baseSlice(array, (fromRight ? 0 : index), (fromRight ? index + 1 : length))
@@ -4397,15 +4540,16 @@
         return length ? baseUniq(arrays[0]) : [];
       }
       var index = -1,
-          result = Array(length);
+          result = Array(length),
+          arraysAt = getArrayAccessor(arrays);
 
       while (++index < length) {
-        var array = arrays[index],
+        var array = arraysAt(index),
             othIndex = -1;
 
         while (++othIndex < length) {
           if (othIndex != index) {
-            result[index] = baseDifference(result[index] || array, arrays[othIndex], iteratee, comparator);
+            result[index] = baseDifference(result[index] || array, arraysAt(othIndex), iteratee, comparator);
           }
         }
       }
@@ -4425,11 +4569,13 @@
       var index = -1,
           length = props.length,
           valsLength = values.length,
-          result = {};
+          result = {},
+          propAt = getArrayAccessor(props),
+          valueAt = getArrayAccessor(values);
 
       while (++index < length) {
-        var value = index < valsLength ? values[index] : undefined;
-        assignFunc(result, props[index], value);
+        var value = index < valsLength ? valueAt(index) : undefined;
+        assignFunc(result, propAt(index), value);
       }
       return result;
     }
@@ -4750,11 +4896,12 @@
      */
     function copyArray(source, array) {
       var index = -1,
-          length = source.length;
+          length = source.length,
+          sourceAt = getArrayAccessor(source);
 
-      array || (array = Array(length));
+      var assignAt = getArrayAssigner(array || (array = Array(length)));
       while (++index < length) {
-        array[index] = source[index];
+        assignAt(index, sourceAt(index));
       }
       return array;
     }
@@ -4887,10 +5034,11 @@
         }
         var length = collection.length,
             index = fromRight ? length : -1,
-            iterable = Object(collection);
+            iterable = Object(collection),
+            arrayAt = getArrayAccessor(iterable);
 
         while ((fromRight ? index-- : ++index < length)) {
-          if (iteratee(iterable[index], index, iterable) === false) {
+          if (iteratee(arrayAt(index), index, iterable) === false) {
             break;
           }
         }
@@ -5062,14 +5210,15 @@
      */
     function createFind(findIndexFunc) {
       return function(collection, predicate, fromIndex) {
-        var iterable = Object(collection);
+        var iterable = Object(collection),
+            accessor = getArrayAccessor(iterable);
         if (!isArrayLike(collection)) {
           var iteratee = getIteratee(predicate, 3);
           collection = keys(collection);
-          predicate = function(key) { return iteratee(iterable[key], key, iterable); };
+          predicate = function(key) { return iteratee(getValue(iterable, key), key, iterable); };
         }
         var index = findIndexFunc(collection, predicate, fromIndex);
-        return index > -1 ? iterable[iteratee ? collection[index] : index] : undefined;
+        return index > -1 ? accessor(iteratee ? collection[index] : index) : undefined;
       };
     }
 
@@ -6420,7 +6569,7 @@
         if (object == null) {
           return false;
         }
-        return object[key] === srcValue &&
+        return getValue(object, key) === srcValue &&
           (srcValue !== undefined || (key in Object(object)));
       };
     }
@@ -6867,10 +7016,11 @@
       var index = -1,
           length = array == null ? 0 : array.length,
           resIndex = 0,
-          result = [];
+          result = [],
+          arrayAt = getArrayAccessor(array);
 
       while (++index < length) {
-        var value = array[index];
+        var value = arrayAt(index);
         if (value) {
           result[resIndex++] = value;
         }
@@ -6907,10 +7057,11 @@
       }
       var args = Array(length - 1),
           array = arguments[0],
-          index = length;
+          index = length,
+          arrayAt = getArrayAccessor(arguments);
 
       while (index--) {
-        args[index - 1] = arguments[index];
+        args[index - 1] = arrayAt(index);
       }
       return arrayPush(isArray(array) ? copyArray(array) : [array], baseFlatten(args, 1));
     }
@@ -7385,11 +7536,12 @@
     function fromPairs(pairs) {
       var index = -1,
           length = pairs == null ? 0 : pairs.length,
-          result = {};
+          result = {},
+          nextPairs = getArrayAccessor(pairs);
 
       while (++index < length) {
-        var pair = pairs[index];
-        result[pair[0]] = pair[1];
+        var nextPair = getArrayAccessor(nextPairs(index));
+        result[nextPair(0)] = nextPair(1);
       }
       return result;
     }
@@ -7413,7 +7565,7 @@
      * // => undefined
      */
     function head(array) {
-      return (array && array.length) ? array[0] : undefined;
+      return (array && array.length) ? getArrayAccessor(array)(0) : undefined;
     }
 
     /**
@@ -7581,7 +7733,7 @@
      * // => 'a~b~c'
      */
     function join(array, separator) {
-      return array == null ? '' : nativeJoin.call(array, separator);
+      return array == null ? '' : nativeJoin.call(isEmberArrayProxy(array) ? array.get('arrangedContent') : array, separator);
     }
 
     /**
@@ -7600,7 +7752,7 @@
      */
     function last(array) {
       var length = array == null ? 0 : array.length;
-      return length ? array[length - 1] : undefined;
+      return length ? getArrayAccessor(array)(length - 1) : undefined;
     }
 
     /**
@@ -7843,11 +7995,12 @@
       }
       var index = -1,
           indexes = [],
-          length = array.length;
+          length = array.length,
+          arrayAt = getArrayAccessor(array);
 
       predicate = getIteratee(predicate, 3);
       while (++index < length) {
-        var value = array[index];
+        var value = arrayAt(index);
         if (predicate(value, index, array)) {
           result.push(value);
           indexes.push(index);
@@ -7881,7 +8034,7 @@
      * // => [3, 2, 1]
      */
     function reverse(array) {
-      return array == null ? array : nativeReverse.call(array);
+      return array == null ? array : isEmberEnumerable(array) ? array.reverseObjects() : nativeReverse.call(array);
     }
 
     /**
@@ -7983,10 +8136,11 @@
      * // => 1
      */
     function sortedIndexOf(array, value) {
-      var length = array == null ? 0 : array.length;
+      var length = array == null ? 0 : array.length,
+          arrayAt = getArrayAccessor(array);
       if (length) {
         var index = baseSortedIndex(array, value);
-        if (index < length && eq(array[index], value)) {
+        if (index < length && eq(arrayAt(index), value)) {
           return index;
         }
       }
@@ -8061,10 +8215,11 @@
      * // => 3
      */
     function sortedLastIndexOf(array, value) {
-      var length = array == null ? 0 : array.length;
+      var length = array == null ? 0 : array.length,
+          arrayAt = getArrayAccessor(array);
       if (length) {
         var index = baseSortedIndex(array, value, true) - 1;
-        if (eq(array[index], value)) {
+        if (eq(arrayAt(index), value)) {
           return index;
         }
       }
@@ -11274,7 +11429,7 @@
      * _.isArray(_.noop);
      * // => false
      */
-    var isArray = Array.isArray;
+    var isArray = root.Ember ? Ember.isArray : Array.isArray;
 
     /**
      * Checks if `value` is classified as an `ArrayBuffer` object.
@@ -13623,7 +13778,7 @@
         object = undefined;
       }
       while (++index < length) {
-        var value = object == null ? undefined : object[toKey(path[index])];
+        var value = object == null ? undefined : getValue(object, toKey(path[index]));
         if (value === undefined) {
           index = length;
           value = defaultValue;
@@ -16607,6 +16762,7 @@
     lodash.rearg = rearg;
     lodash.reject = reject;
     lodash.remove = remove;
+    lodash.reorder = reorder;
     lodash.rest = rest;
     lodash.reverse = reverse;
     lodash.sampleSize = sampleSize;
